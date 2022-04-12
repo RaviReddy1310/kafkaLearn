@@ -125,6 +125,17 @@ public class TwitterProducer {
         config.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         config.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
 
+        // safe producer config
+        config.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
+        config.put(ProducerConfig.ACKS_CONFIG, "all");
+        config.put(ProducerConfig.RETRIES_CONFIG, Integer.toString(Integer.MAX_VALUE));
+        config.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, "5");
+
+        // high throughput config
+        config.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "snappy");
+        config.put(ProducerConfig.LINGER_MS_CONFIG, "20");
+        config.put(ProducerConfig.BATCH_SIZE_CONFIG, Integer.toString(32*1024));
+
         return new KafkaProducer<String, String>(config);
     }
 }
