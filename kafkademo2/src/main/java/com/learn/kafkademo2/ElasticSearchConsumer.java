@@ -47,6 +47,7 @@ public class ElasticSearchConsumer {
             //receive msgs from producer
             ConsumerRecords<String, String> records = kafkaConsumer.poll(Duration.ofMillis(100));
 
+            logger.info("Received "+records.count()+" messages");
             for(ConsumerRecord<String, String> record:records) {
 
             // 2 strategies where unique id is generated for a msg which can be used to make consumer idempotent
@@ -67,6 +68,16 @@ public class ElasticSearchConsumer {
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
+            }
+
+            logger.info("Committing the offsets");
+            kafkaConsumer.commitSync();
+            logger.info("Offsets committed");
+
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
         }
 
@@ -91,6 +102,8 @@ public class ElasticSearchConsumer {
         config.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         config.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
         config.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        config.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false"); //disable auto commit
+        config.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "5"); // maximum records that can be polled
 
         //create consumer
         KafkaConsumer<String, String> kafkaConsumer = new KafkaConsumer<String, String>(config);
