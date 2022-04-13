@@ -11,6 +11,8 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.elasticsearch.action.bulk.BulkRequest;
+import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.client.RequestOptions;
@@ -47,7 +49,12 @@ public class ElasticSearchConsumer {
             //receive msgs from producer
             ConsumerRecords<String, String> records = kafkaConsumer.poll(Duration.ofMillis(100));
 
-            logger.info("Received "+records.count()+" messages");
+            Integer recordCount = records.count();
+            logger.info("Received "+ recordCount +" messages");
+
+            // instead of adding each record to elasticsearch, we can make bulk (a group of records)
+            // and insert the bulk to elasticsearch
+            BulkRequest bulkRequest = new BulkRequest();
             for(ConsumerRecord<String, String> record:records) {
 
             // 2 strategies where unique id is generated for a msg which can be used to make consumer idempotent
@@ -60,19 +67,27 @@ public class ElasticSearchConsumer {
                 IndexRequest indexRequest = new IndexRequest("twitter", "tweets", id)
                         .source(record.value(), XContentType.JSON);
 
-                IndexResponse indexResponse = client.index(indexRequest, RequestOptions.DEFAULT);
-                logger.info(indexResponse.getId());
+                /*IndexResponse indexResponse = client.index(indexRequest, RequestOptions.DEFAULT);
+                logger.info(indexResponse.getId());*/
 
-                try {
+                // adding to the bulk
+                bulkRequest.add(indexRequest);
+
+                /*try {
                     Thread.sleep(1000);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
-                }
+                }*/
             }
 
-            logger.info("Committing the offsets");
-            kafkaConsumer.commitSync();
-            logger.info("Offsets committed");
+            if(recordCount > 0) {
+
+                // inserting a single bulk into the elasticsearch
+                BulkResponse bulkResponse = client.bulk(bulkRequest, RequestOptions.DEFAULT);
+                logger.info("Committing the offsets");
+                kafkaConsumer.commitSync();
+                logger.info("Offsets committed");
+            }
 
             try {
                 Thread.sleep(100);
