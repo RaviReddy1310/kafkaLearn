@@ -27,6 +27,8 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
+import static com.google.gson.JsonParser.parseString;
+
 public class ElasticSearchConsumer {
 
     public static void main(String[] args) throws IOException{
@@ -47,8 +49,14 @@ public class ElasticSearchConsumer {
 
             for(ConsumerRecord<String, String> record:records) {
 
+            // 2 strategies where unique id is generated for a msg which can be used to make consumer idempotent
+                // 1. generic id: id = record.topic()+"_"+record.partition()+"_"+record.offset()
+
+                // 2. twitter specific id since we are using Twitter data
+                String id = extractId(record.value());
+
                 // insert data received from kafka into elasticsearch
-                IndexRequest indexRequest = new IndexRequest("twitter", "tweets")
+                IndexRequest indexRequest = new IndexRequest("twitter", "tweets", id)
                         .source(record.value(), XContentType.JSON);
 
                 IndexResponse indexResponse = client.index(indexRequest, RequestOptions.DEFAULT);
@@ -63,6 +71,11 @@ public class ElasticSearchConsumer {
         }
 
         client.close();
+    }
+
+    private static String extractId(String tweet) {
+
+        return parseString(tweet).getAsJsonObject().get("id_str").getAsString();
     }
 
     private static KafkaConsumer<String, String> getConsumer() {
