@@ -11,6 +11,8 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.elasticsearch.action.bulk.BulkRequest;
+import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.client.RequestOptions;
@@ -26,6 +28,8 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+
+import static com.google.gson.JsonParser.parseString;
 
 public class ElasticSearchConsumer {
 
@@ -45,24 +49,59 @@ public class ElasticSearchConsumer {
             //receive msgs from producer
             ConsumerRecords<String, String> records = kafkaConsumer.poll(Duration.ofMillis(100));
 
+            Integer recordCount = records.count();
+            logger.info("Received "+ recordCount +" messages");
+
+            // instead of adding each record to elasticsearch, we can make bulk (a group of records)
+            // and insert the bulk to elasticsearch
+            BulkRequest bulkRequest = new BulkRequest();
             for(ConsumerRecord<String, String> record:records) {
 
+            // 2 strategies where unique id is generated for a msg which can be used to make consumer idempotent
+                // 1. generic id: id = record.topic()+"_"+record.partition()+"_"+record.offset()
+
+                // 2. twitter specific id since we are using Twitter data
+                String id = extractId(record.value());
+
                 // insert data received from kafka into elasticsearch
-                IndexRequest indexRequest = new IndexRequest("twitter", "tweets")
+                IndexRequest indexRequest = new IndexRequest("twitter", "tweets", id)
                         .source(record.value(), XContentType.JSON);
 
-                IndexResponse indexResponse = client.index(indexRequest, RequestOptions.DEFAULT);
-                logger.info(indexResponse.getId());
+                /*IndexResponse indexResponse = client.index(indexRequest, RequestOptions.DEFAULT);
+                logger.info(indexResponse.getId());*/
 
-                try {
+                // adding to the bulk
+                bulkRequest.add(indexRequest);
+
+                /*try {
                     Thread.sleep(1000);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
-                }
+                }*/
+            }
+
+            if(recordCount > 0) {
+
+                // inserting a single bulk into the elasticsearch
+                BulkResponse bulkResponse = client.bulk(bulkRequest, RequestOptions.DEFAULT);
+                logger.info("Committing the offsets");
+                kafkaConsumer.commitSync();
+                logger.info("Offsets committed");
+            }
+
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
         }
 
         client.close();
+    }
+
+    private static String extractId(String tweet) {
+
+        return parseString(tweet).getAsJsonObject().get("id_str").getAsString();
     }
 
     private static KafkaConsumer<String, String> getConsumer() {
@@ -78,6 +117,8 @@ public class ElasticSearchConsumer {
         config.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         config.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
         config.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        config.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false"); //disable auto commit
+        config.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "5"); // maximum records that can be polled
 
         //create consumer
         KafkaConsumer<String, String> kafkaConsumer = new KafkaConsumer<String, String>(config);
